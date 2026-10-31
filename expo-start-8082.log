@@ -1,0 +1,14 @@
+
+> ticket_management_app@1.0.0 start
+> expo start --web --port 8082
+
+Starting project at C:\Users\heman\OneDrive\Desktop\Ticket_Management_App
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Starting Metro Bundler
+
+ ERROR  An unknown error occurred while installing React Native DevTools. Details:
+
+spawn EPERM
+Waiting on http://localhost:8082
+Logs for your project will appear below.
