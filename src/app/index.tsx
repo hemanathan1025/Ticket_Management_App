@@ -1,98 +1,35 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CheckCircle2, ChevronRight, Crown, ImagePlus, LogOut, Plus, RefreshCw, Send, ShieldCheck, Users, Wrench, X } from 'lucide-react-native';
+import { api, configuredApiUrl, Role, Session } from '../lib/api';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+type Status = 'new' | 'active' | 'resolved';
+type Ticket = { id: string; title: string; status: Status; priority: string; owner: string; category: string; updatedAt: string };
+const defaults: Ticket[] = [
+  { id: '1048', title: 'Wi-Fi keeps disconnecting in meeting room', status: 'new', priority: 'High', owner: 'Priya Shah', category: 'IT Support', updatedAt: '10 min ago' },
+  { id: '1047', title: 'Request access to payroll portal', status: 'active', priority: 'Medium', owner: 'Rahul Kumar', category: 'Access', updatedAt: '32 min ago' },
+  { id: '1046', title: 'Air conditioning is not cooling', status: 'new', priority: 'High', owner: 'Ananya Rao', category: 'Facilities', updatedAt: '1 hr ago' },
+];
+const c = { navy: '#17243A', blue: '#2563EB', bg: '#F6F8FC', muted: '#718096', line: '#E5EAF1', green: '#15803D', orange: '#B45309', red: '#DC2626' };
+const roleData: Record<Role, { title: string; subtitle: string; icon: typeof Crown; accent: string }> = { admin: { title: 'Admin console', subtitle: 'Organisation-wide ticket oversight', icon: Crown, accent: '#7C3AED' }, supervisor: { title: 'Supervisor desk', subtitle: 'Assign and progress team work', icon: ShieldCheck, accent: c.blue }, incharge: { title: 'My requests', subtitle: 'Track requests raised by your team', icon: CheckCircle2, accent: c.green } };
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
+export default function Home() {
+  const [page, setPage] = useState<'login' | 'otp' | 'dashboard'>('login'); const [username, setUsername] = useState(''); const [otp, setOtp] = useState(''); const [devOtp, setDevOtp] = useState(''); const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const [session, setSession] = useState<Session | null>(null); const [tickets, setTickets] = useState(defaults);
+  async function sendOtp() { if (!username.trim()) return setError('Enter your email or username.'); setLoading(true); setError(''); try { const data = await api.sendOtp(username.trim()); setDevOtp(data.devOtp || ''); setPage('otp'); } catch (e) { setError(e instanceof Error ? e.message : 'Could not send OTP.'); } finally { setLoading(false); } }
+  async function verify() { if (!/^\d{6}$/.test(otp)) return setError('Enter the six-digit code.'); setLoading(true); setError(''); try { const data = await api.verifyOtp(username.trim(), otp); setSession(data); setPage('dashboard'); loadTickets(data.token); } catch (e) { setError(e instanceof Error ? e.message : 'Verification failed.'); } finally { setLoading(false); } }
+  async function loadTickets(token: string) { try { const data = await api.tickets(token) as { tickets: any[] }; if (data.tickets?.length) setTickets(data.tickets.map((x) => ({ id: String(x.ticketId || x._id), title: x.title, status: x.status === 'closed' ? 'resolved' : x.status, priority: x.priority, owner: x.createdBy || 'Unassigned', category: x.issueType || 'General', updatedAt: 'Recently' }))); } catch { setTickets(defaults); } }
+  if (page === 'login') return <Auth title="Welcome back" description="Sign in with your work email or username. We’ll send a secure one-time code." username={username} setUsername={setUsername} error={error} loading={loading} onPress={sendOtp} />;
+  if (page === 'otp') return <Otp username={username} otp={otp} setOtp={setOtp} devOtp={devOtp} error={error} loading={loading} onVerify={verify} onBack={() => { setError(''); setPage('login'); }} />;
+  return <Dashboard session={session!} tickets={tickets} refresh={() => loadTickets(session!.token)} signOut={() => { setSession(null); setOtp(''); setPage('login'); }} />;
 }
-
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
-});
+function Auth({ title, description, username, setUsername, error, loading, onPress }: any) { return <SafeAreaView style={s.auth}><View style={s.authTop}><View style={s.logo}><Wrench color="#fff" /></View><Text style={s.brand}>TICKETFLOW</Text><Text style={s.authTitle}>{title}</Text><Text style={s.authText}>{description}</Text></View><View style={s.card}><Text style={s.label}>EMAIL OR USERNAME</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" placeholder="admin@company.com" placeholderTextColor="#94A3B8" style={s.input} /><Text style={s.hint}>Development: admin, sup1, or incharge</Text>{error ? <Text style={s.error}>{error}</Text> : null}<Pressable onPress={onPress} style={s.primary}>{loading ? <ActivityIndicator color="#fff" /> : <><Text style={s.primaryText}>Send verification code</Text><Send size={18} color="#fff" /></>}</Pressable><Text style={s.api}>API: {configuredApiUrl}</Text></View></SafeAreaView>; }
+function Otp({ username, otp, setOtp, devOtp, error, loading, onVerify, onBack }: any) { return <SafeAreaView style={s.auth}><View style={s.authTop}><View style={s.logo}><ShieldCheck color="#fff" /></View><Text style={s.brand}>TICKETFLOW</Text><Text style={s.authTitle}>Check your code</Text><Text style={s.authText}>Enter the code sent for {username}.</Text></View><View style={s.card}><Text style={s.label}>VERIFICATION CODE</Text><TextInput value={otp} onChangeText={setOtp} maxLength={6} keyboardType="number-pad" placeholder="000000" placeholderTextColor="#94A3B8" style={[s.input, s.otp]} />{devOtp ? <Text style={s.dev}>Development OTP: <Text style={{ fontWeight: '900' }}>{devOtp}</Text></Text> : null}{error ? <Text style={s.error}>{error}</Text> : null}<Pressable onPress={onVerify} style={s.primary}>{loading ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryText}>Verify and continue</Text>}</Pressable><Pressable onPress={onBack}><Text style={s.back}>Use a different account</Text></Pressable></View></SafeAreaView>; }
+function Dashboard({ session, tickets, refresh, signOut }: { session: Session; tickets: Ticket[]; refresh: () => void; signOut: () => void }) { const [filter, setFilter] = useState<'all' | Status>('all'); const [selected, setSelected] = useState<Ticket | null>(null); const [showCreate, setShowCreate] = useState(false); const role = session.role, data = roleData[role], Icon = data.icon; const visible = tickets.filter((x) => filter === 'all' || x.status === filter); const counts = useMemo(() => ({ new: tickets.filter(x => x.status === 'new').length, active: tickets.filter(x => x.status === 'active').length, resolved: tickets.filter(x => x.status === 'resolved').length }), [tickets]); return <SafeAreaView style={s.safe}><View style={s.header}><View><View style={s.role}><Icon size={14} color={data.accent} /><Text style={[s.roleText, { color: data.accent }]}>{role.toUpperCase()}</Text></View><Text style={s.title}>{data.title}</Text></View><View style={s.actions}><Pressable onPress={refresh} style={s.icon}><RefreshCw size={19} color={c.navy} /></Pressable><Pressable onPress={signOut} style={s.icon}><LogOut size={19} color={c.navy} /></Pressable></View></View><ScrollView contentContainerStyle={s.content}><Text style={s.hello}>Hello, {session.user.name || role}</Text><Text style={s.subtitle}>{data.subtitle}</Text><View style={s.stats}><Stat label="New" value={counts.new} color={c.blue} /><Stat label="Active" value={counts.active} color={c.orange} /><Stat label="Resolved" value={counts.resolved} color={c.green} /></View>{role === 'admin' ? <View style={s.team}><Users color="#7C3AED" /><View style={{ flex: 1 }}><Text style={s.teamTitle}>Team workload</Text><Text style={s.teamText}>6 active members · 2 supervisors</Text></View><ChevronRight color={c.muted} /></View> : null}<View style={s.section}><Text style={s.sectionTitle}>{role === 'incharge' ? 'Your tickets' : 'Ticket queue'}</Text><Pressable onPress={() => setShowCreate(true)} style={[s.newButton, { backgroundColor: data.accent }]}><Plus size={16} color="#fff" /><Text style={s.newText}>{role === 'supervisor' ? 'Assign' : 'New'}</Text></Pressable></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filters}>{(['all', 'new', 'active', 'resolved'] as const).map(x => <Pressable key={x} onPress={() => setFilter(x)} style={[s.filter, filter === x && { backgroundColor: data.accent, borderColor: data.accent }]}><Text style={[s.filterText, filter === x && { color: '#fff' }]}>{x === 'all' ? 'All tickets' : x}</Text></Pressable>)}</ScrollView><FlatList scrollEnabled={false} data={visible} keyExtractor={x => x.id} ItemSeparatorComponent={() => <View style={{ height: 10 }} />} renderItem={({ item }) => <TicketRow item={item} onPress={() => setSelected(item)} />} /></ScrollView><Details item={selected} close={() => setSelected(null)} /><Create open={showCreate} close={() => setShowCreate(false)} /></SafeAreaView>; }
+function Stat({ label, value, color }: any) { return <View style={s.stat}><View style={[s.dot, { backgroundColor: color }]} /><Text style={s.number}>{value}</Text><Text style={s.statLabel}>{label}</Text></View>; }
+function TicketRow({ item, onPress }: any) { const color = item.status === 'resolved' ? c.green : item.status === 'active' ? c.orange : c.blue; return <Pressable onPress={onPress} style={s.ticket}><View style={s.ticketTop}><Text style={s.id}>#{item.id}</Text><Text style={[s.status, { color }]}>{item.status}</Text></View><Text style={s.ticketTitle}>{item.title}</Text><Text style={s.meta}>{item.category} · {item.updatedAt}</Text></Pressable>; }
+function Details({ item, close }: any) { return <Modal visible={!!item} animationType="slide" onRequestClose={close}><SafeAreaView style={s.modal}><View style={s.modalHeader}><Pressable onPress={close}><X color={c.navy} /></Pressable><Text style={s.modalTitle}>Ticket details</Text><View /></View>{item && <View style={s.detail}><Text style={s.id}>#{item.id}</Text><Text style={s.detailTitle}>{item.title}</Text><Info label="Status" value={item.status} /><Info label="Priority" value={item.priority} /><Info label="Raised by" value={item.owner} /><Info label="Category" value={item.category} /></View>}</SafeAreaView></Modal>; }
+function Info({ label, value }: any) { return <View style={s.info}><Text style={s.infoLabel}>{label}</Text><Text style={s.infoValue}>{value}</Text></View>; }
+function Create({ open, close }: any) { const [title, setTitle] = useState(''); const [image, setImage] = useState<ImagePicker.ImagePickerAsset | null>(null); const pick = async () => { const permission = await ImagePicker.requestMediaLibraryPermissionsAsync(); if (!permission.granted) return Alert.alert('Permission needed', 'Allow photo library access to attach an image.'); const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: .75 }); if (!result.canceled) setImage(result.assets[0]); }; return <Modal visible={open} animationType="slide"><SafeAreaView style={s.modal}><View style={s.modalHeader}><Pressable onPress={close}><X color={c.navy} /></Pressable><Text style={s.modalTitle}>New ticket</Text><View /></View><View style={s.form}><Text style={s.label}>TITLE</Text><TextInput value={title} onChangeText={setTitle} placeholder="What needs attention?" style={s.input} /><Text style={s.label}>DESCRIPTION</Text><TextInput multiline placeholder="Add helpful details" style={[s.input, s.textarea]} /><Text style={s.label}>PHOTO ATTACHMENT</Text><Pressable onPress={pick} style={s.attach}>{image ? <Image source={{ uri: image.uri }} style={s.preview} /> : <ImagePlus size={21} color={c.blue} />}<Text style={s.attachText}>{image ? 'Change attached image' : 'Add an image'}</Text></Pressable><Pressable onPress={() => title ? (close(), Alert.alert('Ticket created', image ? 'Your image was attached to the request.' : 'Your request is now in the queue.')) : Alert.alert('Add a title')} style={s.primary}><Text style={s.primaryText}>Create ticket</Text></Pressable></View></SafeAreaView></Modal>; }
+const s = StyleSheet.create({ auth:{flex:1,backgroundColor:c.navy,justifyContent:'space-between'},authTop:{padding:28,paddingTop:70},logo:{width:54,height:54,borderRadius:15,backgroundColor:c.blue,alignItems:'center',justifyContent:'center'},brand:{color:'#AFC6FF',fontSize:11,letterSpacing:2,fontWeight:'900',marginTop:22},authTitle:{color:'#fff',fontSize:32,fontWeight:'900',marginTop:10},authText:{color:'#B9C5D7',fontSize:15,lineHeight:22,marginTop:10},card:{backgroundColor:'#fff',padding:26,borderTopLeftRadius:28,borderTopRightRadius:28,minHeight:320},label:{fontSize:11,letterSpacing:1.2,color:c.muted,fontWeight:'900',marginBottom:8,marginTop:8},input:{height:52,borderWidth:1,borderColor:c.line,borderRadius:11,paddingHorizontal:14,fontSize:16,color:c.navy},hint:{color:c.muted,fontSize:12,marginTop:9},error:{color:c.red,fontSize:13,fontWeight:'600',marginTop:13},primary:{height:52,backgroundColor:c.blue,borderRadius:11,marginTop:22,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:8},primaryText:{color:'#fff',fontWeight:'900',fontSize:15},api:{color:'#94A3B8',fontSize:10,textAlign:'center',marginTop:16},otp:{textAlign:'center',letterSpacing:9,fontSize:22,fontWeight:'900'},dev:{color:'#92400E',backgroundColor:'#FFFBEB',borderRadius:8,padding:11,marginTop:12},back:{color:c.blue,textAlign:'center',fontWeight:'800',padding:18},safe:{flex:1,backgroundColor:c.bg},header:{backgroundColor:'#fff',padding:20,borderBottomWidth:1,borderColor:c.line,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},role:{flexDirection:'row',alignItems:'center',gap:5},roleText:{fontWeight:'900',fontSize:10,letterSpacing:1},title:{color:c.navy,fontSize:22,fontWeight:'900',marginTop:4},actions:{flexDirection:'row',gap:8},icon:{width:38,height:38,borderRadius:10,backgroundColor:c.bg,justifyContent:'center',alignItems:'center'},content:{padding:20,paddingBottom:40},hello:{fontSize:20,fontWeight:'900',color:c.navy},subtitle:{color:c.muted,fontSize:14,marginTop:5},stats:{flexDirection:'row',gap:9,marginTop:20},stat:{flex:1,backgroundColor:'#fff',borderWidth:1,borderColor:c.line,borderRadius:14,padding:13},dot:{width:8,height:8,borderRadius:4},number:{color:c.navy,fontSize:25,fontWeight:'900',marginTop:7},statLabel:{color:c.muted,fontSize:11,marginTop:2},team:{marginTop:17,padding:14,borderRadius:14,backgroundColor:'#F4F0FF',flexDirection:'row',alignItems:'center',gap:11},teamTitle:{color:c.navy,fontWeight:'800'},teamText:{color:c.muted,fontSize:12,marginTop:2},section:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:24},sectionTitle:{color:c.navy,fontWeight:'900',fontSize:17},newButton:{borderRadius:8,paddingHorizontal:10,paddingVertical:8,flexDirection:'row',gap:4,alignItems:'center'},newText:{color:'#fff',fontWeight:'800',fontSize:12},filters:{gap:8,paddingVertical:13},filter:{borderWidth:1,borderColor:c.line,backgroundColor:'#fff',borderRadius:18,paddingHorizontal:12,paddingVertical:7},filterText:{color:c.muted,fontWeight:'800',fontSize:12,textTransform:'capitalize'},ticket:{backgroundColor:'#fff',borderWidth:1,borderColor:c.line,borderRadius:14,padding:14},ticketTop:{flexDirection:'row',justifyContent:'space-between'},id:{color:c.muted,fontSize:11,fontWeight:'900'},status:{fontWeight:'900',fontSize:11,textTransform:'capitalize'},ticketTitle:{color:c.navy,fontWeight:'800',fontSize:15,lineHeight:21,marginTop:10},meta:{color:c.muted,fontSize:11,marginTop:13},modal:{flex:1,backgroundColor:'#fff'},modalHeader:{height:68,paddingHorizontal:20,borderBottomWidth:1,borderColor:c.line,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},modalTitle:{color:c.navy,fontWeight:'900',fontSize:17},detail:{padding:22},detailTitle:{color:c.navy,fontWeight:'900',fontSize:25,lineHeight:32,marginVertical:14},info:{paddingVertical:14,borderBottomWidth:1,borderColor:c.line},infoLabel:{color:c.muted,fontSize:12},infoValue:{color:c.navy,fontWeight:'800',fontSize:15,marginTop:4},form:{padding:22},textarea:{height:110,textAlignVertical:'top',paddingTop:13},attach:{height:62,borderWidth:1,borderStyle:'dashed',borderColor:'#93B4FF',borderRadius:11,flexDirection:'row',alignItems:'center',paddingHorizontal:14,gap:10},attachText:{color:c.blue,fontWeight:'800'},preview:{width:42,height:42,borderRadius:7} });
